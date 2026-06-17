@@ -1,21 +1,23 @@
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
+const { google } = require("googleapis");
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static("public"));
 
 function extractFolderId(url) {
     const match = url.match(/folders\/([a-zA-Z0-9_-]+)/);
     return match ? match[1] : null;
 }
 
-app.post("/download", async (req, res) => {
+// ⚠️ You MUST enable Google Drive API + API key
+const API_KEY = "YOUR_GOOGLE_API_KEY";
 
+const drive = google.drive({ version: "v3", auth: API_KEY });
+
+app.post("/list", async (req, res) => {
     try {
 
         const { folderUrl } = req.body;
@@ -25,25 +27,30 @@ app.post("/download", async (req, res) => {
         if (!folderId) {
             return res.status(400).json({
                 success: false,
-                message: "Invalid Google Drive folder URL"
+                message: "Invalid folder URL"
             });
         }
 
-        const downloadDir = path.join(__dirname, "downloads");
+        const response = await drive.files.list({
+            q: `'${folderId}' in parents and trashed=false`,
+            fields: "files(id, name, mimeType)"
+        });
 
-        if (!fs.existsSync(downloadDir)) {
-            fs.mkdirSync(downloadDir);
-        }
+        const files = response.data.files;
 
-        return res.json({
+        const result = files.map(file => ({
+            name: file.name,
+            id: file.id,
+            url: `https://drive.google.com/uc?id=${file.id}&export=download`
+        }));
+
+        res.json({
             success: true,
-            message: "Folder accepted",
-            folderId
+            files: result
         });
 
     } catch (err) {
-
-        return res.status(500).json({
+        res.status(500).json({
             success: false,
             error: err.message
         });
@@ -53,5 +60,5 @@ app.post("/download", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log("Server running on port " + PORT);
 });
